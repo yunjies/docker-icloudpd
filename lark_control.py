@@ -7,7 +7,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CONFIG_FILE = "/config/icloudpd.conf"
 DEFAULT_COMMAND_FILE = "/tmp/icloudpd/remote_command.txt"
-LAST_EVENT_FILE = "/tmp/icloudpd/lark_last_event.json"
 
 
 def read_config(path):
@@ -47,40 +46,6 @@ def extract_sender_open_id(payload):
     return sender_id.get("open_id") or event.get("open_id") or ""
 
 
-def describe_event(payload):
-    event = payload.get("event") or {}
-    header = payload.get("header") or {}
-    message = event.get("message") or {}
-    return {
-        "schema": payload.get("schema"),
-        "payload_type": payload.get("type"),
-        "header_event_type": header.get("event_type"),
-        "event_type": event.get("type"),
-        "message_type": message.get("message_type"),
-        "event_keys": sorted(event.keys()),
-        "message_keys": sorted(message.keys()) if isinstance(message, dict) else [],
-    }
-
-
-def scrub_payload(value):
-    if isinstance(value, dict):
-        return {
-            key: "<redacted>" if key in {"token", "encrypt"} else scrub_payload(item)
-            for key, item in value.items()
-        }
-    if isinstance(value, list):
-        return [scrub_payload(item) for item in value]
-    return value
-
-
-def save_last_event(payload):
-    try:
-        with open(LAST_EVENT_FILE, "w", encoding="utf-8") as handle:
-            json.dump(scrub_payload(payload), handle, ensure_ascii=False, indent=2)
-    except OSError as exc:
-        print(f"failed to save last Lark event: {exc}", flush=True)
-
-
 def is_message_event(payload):
     header_event_type = (payload.get("header") or {}).get("event_type")
     if header_event_type == "im.message.receive_v1":
@@ -88,6 +53,24 @@ def is_message_event(payload):
 
     event = payload.get("event") or {}
     return payload.get("type") == "event_callback" and event.get("type") == "message"
+
+
+def command_prefix(config):
+    return (config.get("user") or "user").strip().lower()
+
+
+def is_control_command(config, text):
+    text_lc = text.strip().lower()
+    prefix = command_prefix(config)
+    return (
+        text_lc == prefix
+        or text_lc == f"{prefix} auth"
+        or (text_lc.startswith(f"{prefix} ") and len(text_lc.split()) == 2)
+    )
+
+
+def interrupt_current_check():
+    os.system("ps | awk '/--only-print-filenames/ && !/awk/ {print $1}' | while read pid; do kill \"$pid\" 2>/dev/null; done")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -124,8 +107,6 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             self.send_json(400, {"ok": False, "error": "invalid json"})
             return
-        save_last_event(payload)
-        print(f"received Lark event summary: {describe_event(payload)}", flush=True)
 
         verification_token = config.get("lark_verification_token")
         payload_token = payload.get("token") or (payload.get("header") or {}).get("token")
@@ -135,12 +116,10 @@ class Handler(BaseHTTPRequestHandler):
 
         challenge = payload.get("challenge") or (payload.get("event") or {}).get("challenge")
         if challenge:
-            print("handled Lark challenge event", flush=True)
             self.send_json(200, {"challenge": challenge})
             return
 
         if not is_message_event(payload):
-            print(f"ignored non-message event: {describe_event(payload)}", flush=True)
             self.send_json(200, {"ok": True, "ignored": True})
             return
 
@@ -151,21 +130,23 @@ class Handler(BaseHTTPRequestHandler):
             if item.strip()
         ]
         if allowed_open_ids and sender_open_id not in allowed_open_ids:
-            print(f"ignored sender not allowed: sender={sender_open_id}", flush=True)
             self.send_json(200, {"ok": True, "ignored": True, "reason": "sender not allowed"})
             return
 
         text = extract_text(payload)
         if not text:
-            print(f"ignored empty or non-text message: {describe_event(payload)}", flush=True)
             self.send_json(200, {"ok": True, "ignored": True, "reason": "empty or non-text message"})
+            return
+
+        if not is_control_command(config, text):
+            self.send_json(200, {"ok": True, "ignored": True, "reason": "not a control command"})
             return
 
         command_file = config.get("lark_control_command_file") or DEFAULT_COMMAND_FILE
         os.makedirs(os.path.dirname(command_file), exist_ok=True)
         with open(command_file, "a", encoding="utf-8") as handle:
             handle.write(text.replace("\r", " ").replace("\n", " ").strip() + "\n")
-        print(f"queued remote command from sender={sender_open_id}: {text}", flush=True)
+        interrupt_current_check()
 
         self.send_json(200, {"ok": True})
 

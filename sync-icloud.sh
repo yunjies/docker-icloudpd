@@ -898,6 +898,12 @@ check_files()
       run_as "(/opt/icloudpd/bin/icloudpd --directory ${download_path} --cookie-directory /config --username ${apple_id} --domain ${auth_domain} --folder-structure ${folder_structure} --keep-unicode-in-filenames --only-print-filenames 2>/tmp/icloudpd/icloudpd_check_error; echo $? >/tmp/icloudpd/icloudpd_check_exit_code) | tee /tmp/icloudpd/icloudpd_check.log"
       check_exit_code="$(cat /tmp/icloudpd/icloudpd_check_exit_code)"
    fi
+   if [ "${lark_control_enabled}" = "true" ] && [ -s "${lark_control_command_file:-/tmp/icloudpd/remote_command.txt}" ]
+   then
+      log_info "Remote command received during file check"
+      check_exit_code=0
+      >/tmp/icloudpd/icloudpd_check_error
+   fi
    if [ "${check_exit_code}" -ne 0 ] || [ -s /tmp/icloudpd/icloudpd_check_error ]
    then
       log_error "Failed check for new files files"
@@ -2367,6 +2373,16 @@ synchronise_user()
       if [ "${skip_check}" = "false" ]
       then
          check_files
+         if [ "${lark_control_enabled}" = "true" ] && [ -s "${lark_control_command_file:-/tmp/icloudpd/remote_command.txt}" ]
+         then
+            unset break_while
+            poll_lark_remote_commands
+            if [ -n "${break_while}" ]
+            then
+               remote_sync_started_notification
+               continue
+            fi
+         fi
       else
          check_exit_code=0
          check_files_count=1
