@@ -46,6 +46,21 @@ def extract_sender_open_id(payload):
     return sender_id.get("open_id") or event.get("open_id") or ""
 
 
+def describe_event(payload):
+    event = payload.get("event") or {}
+    header = payload.get("header") or {}
+    message = event.get("message") or {}
+    return {
+        "schema": payload.get("schema"),
+        "payload_type": payload.get("type"),
+        "header_event_type": header.get("event_type"),
+        "event_type": event.get("type"),
+        "message_type": message.get("message_type"),
+        "event_keys": sorted(event.keys()),
+        "message_keys": sorted(message.keys()) if isinstance(message, dict) else [],
+    }
+
+
 def is_message_event(payload):
     header_event_type = (payload.get("header") or {}).get("event_type")
     if header_event_type == "im.message.receive_v1":
@@ -102,6 +117,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if not is_message_event(payload):
+            print(f"ignored non-message event: {describe_event(payload)}", flush=True)
             self.send_json(200, {"ok": True, "ignored": True})
             return
 
@@ -112,11 +128,13 @@ class Handler(BaseHTTPRequestHandler):
             if item.strip()
         ]
         if allowed_open_ids and sender_open_id not in allowed_open_ids:
+            print(f"ignored sender not allowed: sender={sender_open_id}", flush=True)
             self.send_json(200, {"ok": True, "ignored": True, "reason": "sender not allowed"})
             return
 
         text = extract_text(payload)
         if not text:
+            print(f"ignored empty or non-text message: {describe_event(payload)}", flush=True)
             self.send_json(200, {"ok": True, "ignored": True, "reason": "empty or non-text message"})
             return
 
@@ -124,6 +142,7 @@ class Handler(BaseHTTPRequestHandler):
         os.makedirs(os.path.dirname(command_file), exist_ok=True)
         with open(command_file, "a", encoding="utf-8") as handle:
             handle.write(text.replace("\r", " ").replace("\n", " ").strip() + "\n")
+        print(f"queued remote command from sender={sender_open_id}: {text}", flush=True)
 
         self.send_json(200, {"ok": True})
 
