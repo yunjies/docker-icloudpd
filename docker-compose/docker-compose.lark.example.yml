@@ -1,0 +1,35 @@
+networks:
+   icloudpd:
+      name: icloudpd
+      driver: bridge
+      ipam:
+         driver: default
+      driver_opts:
+         com.docker.network.bridge.name: icloudpd
+
+volumes:
+   icloudpd_lark_config:
+      name: icloudpd_lark_config
+
+services:
+   icloudpd_lark:
+      hostname: icloudpd_lark
+      networks:
+         icloudpd:
+            aliases:
+               - icloudpd_lark
+      build:
+         context: ..
+         dockerfile: icloudpd.dockerfile
+      image: icloudpd:lark
+      env_file:
+         - lark.example.env.template
+      ports:
+         - "8088:8088"
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+      restart: always
+      volumes:
+         - icloudpd_lark_config:/config
+         - ./iCloud/:/home/user/iCloud/

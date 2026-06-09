@@ -332,6 +332,14 @@ configure_notifications()
       fi
       log_debug "   - Silent file notifications: ${silent_file_notifications}"
       clean_notification_title
+   elif [ "${notification_type}" = "lark" ] && [ -n "${lark_app_id}" ] && [ -n "${lark_app_secret}" ] && [ -n "${lark_receive_id}" ]
+   then
+      log_info " | ${notification_type_tc} notifications enabled"
+      log_debug "   - ${notification_type_tc} app id: ${lark_app_id:0:6}********"
+      log_debug "   - ${notification_type_tc} receive id type: ${lark_receive_id_type:=open_id}"
+      log_debug "   - ${notification_type_tc} receive id: ${lark_receive_id:0:6}********"
+      log_debug "   - ${notification_type_tc} API base: ${lark_api_base:=https://open.feishu.cn}"
+      clean_notification_title
    elif [ "${notification_type}" = "openhab" ] && [ -n "${webhook_server}" ] && [ -n "${webhook_id}" ]
    then
       if [ "${webhook_https}" = "true" ]
@@ -450,16 +458,16 @@ configure_notifications()
       log_debug "   - ${notification_type_tc} recipient: ${signal_recipient}"
    else
       case ${notification_type} in
-         prowl|pushover|telegram|openhab|webhook|discord|dingtalk|iyuu|wecom|gotify|bark|msmtp|signal)
+         prowl|pushover|telegram|lark|openhab|webhook|discord|dingtalk|iyuu|wecom|gotify|bark|msmtp|signal)
             log_warning " ! ${notification_type_tc} notifications enabled, but configured incorrectly - disabling notifications"
             log_warning " ! Notification type (${notification_type}) is valid, so please check other mandatory variables"
             ;;
          *)
             log_warning " ! ${notification_type} is not a valid notification type - disabling notifications."
-            log_warning " ! Valid types are: <prowl|pushover|telegram|openhab|webhook|discord|dingtalk|iyuu|wecom|gotify|bark|msmtp|signal>"
+            log_warning " ! Valid types are: <prowl|pushover|telegram|lark|openhab|webhook|discord|dingtalk|iyuu|wecom|gotify|bark|msmtp|signal>"
             ;;
       esac
-      unset notification_type prowl_api_key pushover_user pushover_token telegram_token telegram_chat_id webhook_scheme webhook_server webhook_port webhook_id dingtalk_token discord_id discord_token iyuu_token wecom_id wecom_secret gotify_app_token gotify_scheme gotify_server_url bark_device_key bark_server
+      unset notification_type prowl_api_key pushover_user pushover_token telegram_token telegram_chat_id lark_app_id lark_app_secret lark_receive_id webhook_scheme webhook_server webhook_port webhook_id dingtalk_token discord_id discord_token iyuu_token wecom_id wecom_secret gotify_app_token gotify_scheme gotify_server_url bark_device_key bark_server
    fi
    if [ "${startup_notification}" = "true" ]
    then
@@ -1977,6 +1985,17 @@ send_notification()
             curl_exit_code="$?"
             unset disable_notification
             ;;
+         "lark")
+            export LARK_NOTIFICATION_TITLE="${notification_title}"
+            export LARK_NOTIFICATION_EVENT="${notification_event}"
+            export LARK_NOTIFICATION_MESSAGE="${notification_message}"
+            export LARK_NOTIFICATION_PREVIEW_COUNT="${notification_files_preview_count}"
+            export LARK_NOTIFICATION_PREVIEW_TYPE="${notification_files_preview_type}"
+            export LARK_NOTIFICATION_PREVIEW_TEXT="${notification_files_preview_text}"
+            notification_result="$(/usr/local/bin/lark_send.py)"
+            curl_exit_code="$?"
+            unset LARK_NOTIFICATION_TITLE LARK_NOTIFICATION_EVENT LARK_NOTIFICATION_MESSAGE LARK_NOTIFICATION_PREVIEW_COUNT LARK_NOTIFICATION_PREVIEW_TYPE LARK_NOTIFICATION_PREVIEW_TEXT
+            ;;
          "openhab")
             webhook_payload="$(echo -e "${notification_title} - ${notification_message}")"
             notification_result="$(curl -X 'PUT' --silent --output /dev/null --write-out "%{http_code}" "${notification_url}" \
@@ -2243,6 +2262,82 @@ command_line_builder()
    fi
 }
 
+remote_sync_started_notification()
+{
+   log_debug "Remote sync initiated"
+   if [ "${icloud_china}" = "false" ]
+   then
+      send_notification "remotesync" "iCloudPD remote download initiated" "0" "iCloudPD has detected a remote download request for Apple ID: ${apple_id}"
+      remote_sync_complete_notification=true
+   else
+      send_notification "remotesync" "iCloudPD remote download initiated" "0" "启动成功，开始同步当前 Apple ID 中的照片" "" "" "" "开始同步 ${name} 的 iCloud 图库" "Apple ID: ${apple_id}"
+   fi
+}
+
+process_remote_command()
+{
+   local remote_command remote_command_lc user_lc mfa_code sms_choice
+   remote_command="${1}"
+   remote_command_lc="$(echo "${remote_command}" | tr '[:upper:]' '[:lower:]')"
+   user_lc="$(echo "${user}" | tr '[:upper:]' '[:lower:]')"
+
+   if [ "${remote_command_lc}" = "${user_lc}" ]
+   then
+      break_while=true
+      log_debug "Remote sync message match: ${remote_command}"
+   elif [ "${remote_command_lc}" = "${user_lc} auth" ]
+   then
+      log_debug "Remote authentication message match: ${remote_command}"
+      if [ "${icloud_china}" = "false" ]
+      then
+         send_notification "remotesync" "iCloudPD remote download initiated" "0" "iCloudPD has detected a remote authentication request for Apple ID: ${apple_id}"
+      else
+         send_notification "remotesync" "iCloudPD remote download initiated" "0" "iCloudPD将以Apple ID: ${apple_id}发起身份验证"
+      fi
+      rm -f "/config/${cookie_file}" "/config/${cookie_file}.session"
+      log_debug "Starting remote authentication process"
+      /usr/bin/expect /opt/authenticate.exp &
+      poll_sleep=3
+   elif [ "$(expr match "${remote_command_lc}" "^${user_lc} [0-9][0-9][0-9][0-9][0-9][0-9]$" >/dev/null; echo $?)" -eq 0 ]
+   then
+      mfa_code="$(echo "${remote_command}" | awk '{print $2}')"
+      printf "%s\n" "${mfa_code}" >> /tmp/icloudpd/expect_input.txt
+      listen_counter=$((listen_counter+2))
+      sleep 2
+      poll_sleep=30
+   elif [ "$(expr match "${remote_command_lc}" "^${user_lc} [a-z]$" >/dev/null; echo $?)" -eq 0 ]
+   then
+      sms_choice="$(echo "${remote_command}" | awk '{print $2}')"
+      printf "%s\n" "${sms_choice}" >> /tmp/icloudpd/expect_input.txt
+      listen_counter=$((listen_counter+2))
+      sleep 2
+      poll_sleep=3
+   else
+      log_debug "Ignoring remote command: ${remote_command}"
+   fi
+}
+
+poll_lark_remote_commands()
+{
+   local remote_command_file remote_command_snapshot remote_command
+   remote_command_file="${lark_control_command_file:-/tmp/icloudpd/remote_command.txt}"
+   if [ ! -s "${remote_command_file}" ]
+   then
+      return
+   fi
+
+   remote_command_snapshot="/tmp/icloudpd/remote_command.$$.txt"
+   cp "${remote_command_file}" "${remote_command_snapshot}"
+   : > "${remote_command_file}"
+   while IFS= read -r remote_command || [ -n "${remote_command}" ]
+   do
+      [ -n "${remote_command}" ] || continue
+      log_debug "Processing Lark remote command: ${remote_command}"
+      process_remote_command "${remote_command}"
+   done < "${remote_command_snapshot}"
+   rm -f "${remote_command_snapshot}"
+}
+
 synchronise_user()
 {
    log_info "Sync user: ${user}"
@@ -2388,9 +2483,9 @@ synchronise_user()
          fi
          unset check_exit_code check_files_count download_exit_code
          unset new_files
-         if [ "${notification_type}" = "telegram" ] && [ "${telegram_polling}" = "true" ]
+         if { [ "${notification_type}" = "telegram" ] && [ "${telegram_polling}" = "true" ]; } || [ "${lark_control_enabled}" = "true" ]
          then
-            log_info "Monitoring ${notification_type_tc} for remote commands prefix: ${user}"
+            log_info "Monitoring remote commands prefix: ${user}"
             listen_counter=0
             poll_sleep=30
             while [ "${listen_counter}" -lt "${sleep_time}" ]
@@ -2402,7 +2497,18 @@ synchronise_user()
                   rm "/tmp/icloudpd/expect_error_flag"
                   break
                fi
-               if [ "${telegram_polling}" = "true" ]
+               if [ "${lark_control_enabled}" = "true" ]
+               then
+                  unset break_while
+                  poll_lark_remote_commands
+                  if [ -n "${break_while}" ]
+                  then
+                     remote_sync_started_notification
+                     poll_sleep=30
+                     break
+                  fi
+               fi
+               if [ "${notification_type}" = "telegram" ] && [ "${telegram_polling}" = "true" ]
                then
                   unset latest_updates latest_update_ids break_while
                   update_count=0

@@ -114,6 +114,18 @@ write_variable keep_icloud_recent_days
 write_variable keep_icloud_recent_only
 write_variable keep_unicode false
 write_variable libraries_with_dates false
+write_variable lark_allowed_open_ids
+write_variable lark_api_base https://open.feishu.cn
+write_variable lark_app_id
+write_variable lark_app_secret
+write_variable lark_control_command_file /tmp/icloudpd/remote_command.txt
+write_variable lark_control_enabled false
+write_variable lark_control_host 0.0.0.0
+write_variable lark_control_path /lark/events
+write_variable lark_control_port 8088
+write_variable lark_receive_id
+write_variable lark_receive_id_type open_id
+write_variable lark_verification_token
 write_variable live_photo_mov_filename_policy suffix
 write_variable live_photo_size original
 write_variable media_id_delete

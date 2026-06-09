@@ -22,6 +22,7 @@ echo "$(date '+%d/%m/%Y - %H:%M:%S') | Install iCloudPD latest release" && \
 
 COPY build_version.txt /opt
 COPY --chmod=0755 *.sh /usr/local/bin/
+COPY --chmod=0755 *.py /usr/local/bin/
 COPY authenticate.exp /opt/authenticate.exp
 COPY CONFIGURATION.md /opt
 COPY profile /etc/profile

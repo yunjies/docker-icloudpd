@@ -4,11 +4,19 @@ send_message()
 {
    local text
    text="$1"
-   notification_result="$(curl --silent --output /dev/null --write-out "%{http_code}" --request POST "${notification_url}" \
-      --data chat_id="${telegram_chat_id}" \
-      --data parse_mode="markdown" \
-      --data disable_notification="${telegram_disable_notification:=false}" \
-      --data text="${text}")"
+   if [ "${notification_type}" = "lark" ]
+   then
+      LARK_NOTIFICATION_TITLE="${notification_title}" \
+      LARK_NOTIFICATION_EVENT="iCloudPD remote authentication" \
+      LARK_NOTIFICATION_MESSAGE="${text}" \
+      /usr/local/bin/lark_send.py >/dev/null
+   else
+      notification_result="$(curl --silent --output /dev/null --write-out "%{http_code}" --request POST "${notification_url}" \
+         --data chat_id="${telegram_chat_id}" \
+         --data parse_mode="markdown" \
+         --data disable_notification="${telegram_disable_notification:=false}" \
+         --data text="${text}")"
+   fi
 }
 
 choose_sms_number()
@@ -63,6 +71,7 @@ show_variables()
 config_file="/config/icloudpd.conf"
 user="$(grep "^user=" ${config_file} | awk -F= '{print $2}')"
 apple_id="$(grep "^apple_id=" ${config_file} | awk -F= '{print $2}')"
+notification_type="$(grep "^notification_type=" ${config_file} | awk -F= '{print $2}')"
 telegram_chat_id="$(grep "^telegram_chat_id=" ${config_file} | awk -F= '{print $2}')"
 telegram_http="$(grep "^telegram_http=" ${config_file} | awk -F= '{print $2}')"
 telegram_server="$(grep "^telegram_server=" ${config_file} | awk -F= '{print $2}')"

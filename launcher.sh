@@ -529,6 +529,13 @@ then
          disable_notifications
       fi
    fi
+   if [ "${notification_type}" = "lark" ]
+   then
+      if [ -z "${lark_app_id}" ] || [ -z "${lark_app_secret}" ] || [ -z "${lark_receive_id}" ]
+      then
+         disable_notifications
+      fi
+   fi
    if [ "${notification_type}" = "openhab" ]
    then
       if [ -z "${webhook_server}" ] || [ -z "${webhook_id}" ]
@@ -593,6 +600,19 @@ then
          disable_notifications
       fi
    fi
+fi
+
+# Start Lark event receiver for remote commands
+if [ "${lark_control_enabled}" = "true" ]
+then
+   if [ -z "${lark_verification_token}" ]
+   then
+      log_error "   | Lark control is enabled, but lark_verification_token is not set"
+      log_error "   ! Cannot continue. Halting"
+      sleep infinity
+   fi
+   log_info " - Starting Lark control receiver on ${lark_control_host:-0.0.0.0}:${lark_control_port:-8088}${lark_control_path:-/lark/events}"
+   /usr/local/bin/lark_control.py &
 fi
 
 # Check download directories are mounted

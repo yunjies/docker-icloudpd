@@ -132,7 +132,7 @@ adds asset id from iCloud to all file names and does not need de-duplication. De
 
 ## NOTIFICATION CONFIGURATION ITEMS
 
-**notification_type**: This specifies the method that is used to send notifications. These are the options available **Prowl**, **Pushover**, **Telegram**, **Webhook**, **openhab**, **Dingtalk**, **Discord**, **IYUU**, **WeCom**, **Gotify**, **Bark**, **msmtp** and **signal**. When the multifactor authentication cookie is within 7 days (default) of expiry, a notification will be sent upon download. No more than a single notification will be sent within a 24 hour period unless the container is restarted. This does not include the notification that is sent each time the container is started.
+**notification_type**: This specifies the method that is used to send notifications. These are the options available **Prowl**, **Pushover**, **Telegram**, **Lark**, **Webhook**, **openhab**, **Dingtalk**, **Discord**, **IYUU**, **WeCom**, **Gotify**, **Bark**, **msmtp** and **signal**. When the multifactor authentication cookie is within 7 days (default) of expiry, a notification will be sent upon download. No more than a single notification will be sent within a 24 hour period unless the container is restarted. This does not include the notification that is sent each time the container is started.
 
 **notification_title**: This allows you to change the title which is sent on the notifications. This variable will default to **boredazfcuk/iCloudPD**.
 
@@ -157,6 +157,30 @@ adds asset id from iCloud to all file names and does not need de-duplication. De
 **telegram_server**: Optional if notification_type set to 'Telegram'. If Telegram is blocked in your country and you need to use a proxy server to access it, put the fully qualified domain name of the server here. e.g. proxy.server.com
 
 **telegram_http**: Optional if notification_type set to 'Telegram'. If Telegram is retricted to HTTP only in your country, set this to **true** so that HTTP is used instead of HTTPS. Default = false
+
+**lark_app_id**: Mandatory if notification_type is set to `Lark`. This is the App ID for your Feishu/Lark custom app.
+
+**lark_app_secret**: Mandatory if notification_type is set to `Lark`. This is the App Secret for your Feishu/Lark custom app.
+
+**lark_receive_id**: Mandatory if notification_type is set to `Lark`. This is the receiver for notification messages. For direct messages, use the target user's open_id by default.
+
+**lark_receive_id_type**: Optional if notification_type is set to `Lark`. Defaults to `open_id`. Other Feishu-supported values include `user_id`, `union_id`, `email`, and `chat_id`.
+
+**lark_api_base**: Optional. Defaults to `https://open.feishu.cn`.
+
+**lark_control_enabled**: Optional. Set to `true` to start the built-in Feishu/Lark event receiver for remote commands. Default = false.
+
+**lark_control_host**: Optional. Host interface for the event receiver. Default = `0.0.0.0`.
+
+**lark_control_port**: Optional. Port for the event receiver. Default = `8088`. Publish this port from Docker if Feishu needs to reach the container through a reverse proxy.
+
+**lark_control_path**: Optional. URL path for Feishu event callbacks. Default = `/lark/events`.
+
+**lark_verification_token**: Mandatory when `lark_control_enabled=true`. This must match the Verification Token configured in the Feishu/Lark event subscription.
+
+**lark_allowed_open_ids**: Optional comma-separated list of sender open_id values allowed to control this container. If empty, any user who can DM the app and reaches this callback can issue commands.
+
+**lark_control_command_file**: Optional. Internal command queue file used by the event receiver and sync loop. Default = `/tmp/icloudpd/remote_command.txt`.
 
 **webhook_server**: Mandatory if notification_type set to 'Webhook' or 'openhab' then this is the name of the server to connect to when sending webhook notifications.
 
@@ -384,6 +408,17 @@ If you are using Telegram as your notification application, you can now send mes
 
 ## Remote Re-authentication
 Apple have recently reduced the re-authentication tim from 90 days to 30 days. This means connecting to your container, re-initialising it and completing multi-factor authentication. If I am out of the house and my cookie expires, I would need to wait until I get home, faff about with the whole process I just described. Now, you can message your container in a similar manner to the remote syncronisation, but adding `auth` to the end of the message, so for example `boredazfcuk auth`. After you have done this, I find it is best to start typing another message starting `boredazfcuk ` (note the space) and then changing the keyboard to number input. The container should pick up this instruction within a minute and it will message you back asking for the MFA code. It will start the re-authentication process and your iDevice will display a popup to `allow` or `deny` the connection. Click `allow` and you will be presented with your multi-factor authentication code. Memorise this code and add it to the end of your message, like `boredazfcuk 123456` and hit send. The container will then use this code to re-initialise your cookie and start downloading your photos again. One word of caution though... Literally every company on the planet tells you never to share this code with anyone. I put this feature in because... well... I trust me. I don't believe in putting blind faith in other though. So neither should you. Feel free to read the source code, so you can make sure it's not doing anything nefarious, by checking it yourself. I understand that not everyone can code though, so if you don't trust it, that's totally OK, probably a good choice on your behalf. To be fair, I'm just a dude with an IT hobby. I couldn't care less about your iCloud account, your contacts, or the pictures of your cat/dog. I just hope this makes you life better in some tiny way.
+
+# LARK 2-WAY COMMUNICATIONS
+## Remote Download
+If `lark_control_enabled=true`, the container starts a small HTTP event receiver at `http://<container>:8088/lark/events` by default. Configure your Feishu/Lark app event subscription callback URL to point to this endpoint through a public reverse proxy or tunnel. The built-in receiver expects normal JSON event callbacks with Verification Token validation; do not enable Feishu/Lark Encrypt Key encryption for this endpoint.
+
+Sending the configured `user` value to the app DM will force a download, using the same command format as Telegram. For example, if `user=boredazfcuk`, send `boredazfcuk`.
+
+## Remote Re-authentication
+Send `<user> auth` to start re-authentication, then send `<user> 123456` when your Apple device shows the MFA code. If the authentication flow asks you to choose an SMS device, send `<user> a`, `<user> b`, etc.
+
+The Feishu/Lark app needs permission to receive messages sent to the bot and to send messages as the bot. Enable the `im.message.receive_v1` event for inbound DM control. If you use Lark notifications, grant the app permission to send messages and set `notification_type=Lark`.
 
 ## COMMAND LINE PARAMETERS
 
