@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CONFIG_FILE = "/config/icloudpd.conf"
 DEFAULT_COMMAND_FILE = "/tmp/icloudpd/remote_command.txt"
+LAST_EVENT_FILE = "/tmp/icloudpd/lark_last_event.json"
 
 
 def read_config(path):
@@ -61,6 +62,25 @@ def describe_event(payload):
     }
 
 
+def scrub_payload(value):
+    if isinstance(value, dict):
+        return {
+            key: "<redacted>" if key in {"token", "encrypt"} else scrub_payload(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [scrub_payload(item) for item in value]
+    return value
+
+
+def save_last_event(payload):
+    try:
+        with open(LAST_EVENT_FILE, "w", encoding="utf-8") as handle:
+            json.dump(scrub_payload(payload), handle, ensure_ascii=False, indent=2)
+    except OSError as exc:
+        print(f"failed to save last Lark event: {exc}", flush=True)
+
+
 def is_message_event(payload):
     header_event_type = (payload.get("header") or {}).get("event_type")
     if header_event_type == "im.message.receive_v1":
@@ -104,6 +124,8 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             self.send_json(400, {"ok": False, "error": "invalid json"})
             return
+        save_last_event(payload)
+        print(f"received Lark event summary: {describe_event(payload)}", flush=True)
 
         verification_token = config.get("lark_verification_token")
         payload_token = payload.get("token") or (payload.get("header") or {}).get("token")
@@ -113,6 +135,7 @@ class Handler(BaseHTTPRequestHandler):
 
         challenge = payload.get("challenge") or (payload.get("event") or {}).get("challenge")
         if challenge:
+            print("handled Lark challenge event", flush=True)
             self.send_json(200, {"challenge": challenge})
             return
 
