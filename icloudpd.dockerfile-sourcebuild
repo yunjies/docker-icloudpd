@@ -65,6 +65,8 @@ COPY authenticate.exp  /opt/authenticate.exp
 COPY CONFIGURATION.md  /opt
 COPY profile           /etc/profile
 
+RUN chmod +x /usr/local/bin/*.sh /usr/local/bin/*.py
+
 HEALTHCHECK --start-period=10s --interval=1m --timeout=10s \
     CMD /usr/local/bin/healthcheck.sh
 
