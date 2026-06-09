@@ -70,7 +70,11 @@ def is_control_command(config, text):
 
 
 def interrupt_current_check():
-    os.system("ps | awk '/--only-print-filenames/ && !/awk/ {print $1}' | while read pid; do kill \"$pid\" 2>/dev/null; done")
+    os.system("ps | awk '/\\/opt\\/icloudpd\\/bin\\/icloudpd/ && !/awk/ {print $1}' | while read pid; do kill \"$pid\" 2>/dev/null; done")
+
+
+def icloudpd_download_running():
+    return os.system("ps | grep '/opt/icloudpd/bin/icloudpd' | grep -qv -- '--only-print-filenames'") == 0
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -140,6 +144,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if not is_control_command(config, text):
             self.send_json(200, {"ok": True, "ignored": True, "reason": "not a control command"})
+            return
+
+        if text.strip().lower() == command_prefix(config) and icloudpd_download_running():
+            self.send_json(200, {"ok": True, "ignored": True, "reason": "download already running"})
             return
 
         command_file = config.get("lark_control_command_file") or DEFAULT_COMMAND_FILE

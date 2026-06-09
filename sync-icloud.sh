@@ -2408,6 +2408,19 @@ synchronise_user()
                download_photos
             fi
             download_exit_code="$(cat /tmp/icloudpd/icloudpd_download_exit_code)"
+            if [ "${lark_control_enabled}" = "true" ] && [ -s "${lark_control_command_file:-/tmp/icloudpd/remote_command.txt}" ]
+            then
+               log_info "Remote command received during download"
+               download_exit_code=0
+               >/tmp/icloudpd/icloudpd_download_error
+               unset break_while
+               poll_lark_remote_commands
+               if [ -n "${break_while}" ]
+               then
+                  remote_sync_started_notification
+                  continue
+               fi
+            fi
             if [ "${download_exit_code}" -gt 0 ] || [ -s /tmp/icloudpd/icloudpd_download_error ]
             then
                log_error "Failed to download new files"
