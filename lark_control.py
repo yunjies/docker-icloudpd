@@ -28,7 +28,8 @@ def extract_text(payload):
     event = payload.get("event") or {}
     message = event.get("message") or {}
     if message.get("message_type") != "text":
-        return ""
+        old_text = event.get("text_without_at_bot") or event.get("text")
+        return str(old_text or "").strip()
     content = message.get("content") or "{}"
     if isinstance(content, str):
         try:
@@ -42,7 +43,16 @@ def extract_sender_open_id(payload):
     event = payload.get("event") or {}
     sender = event.get("sender") or {}
     sender_id = sender.get("sender_id") or {}
-    return sender_id.get("open_id") or ""
+    return sender_id.get("open_id") or event.get("open_id") or ""
+
+
+def is_message_event(payload):
+    header_event_type = (payload.get("header") or {}).get("event_type")
+    if header_event_type == "im.message.receive_v1":
+        return True
+
+    event = payload.get("event") or {}
+    return payload.get("type") == "event_callback" and event.get("type") == "message"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -91,8 +101,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, {"challenge": challenge})
             return
 
-        event_type = (payload.get("header") or {}).get("event_type") or payload.get("type")
-        if event_type != "im.message.receive_v1":
+        if not is_message_event(payload):
             self.send_json(200, {"ok": True, "ignored": True})
             return
 
