@@ -4,6 +4,8 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from lark_send import get_tenant_access_token, post_json
+
 
 CONFIG_FILE = "/config/icloudpd.conf"
 DEFAULT_COMMAND_FILE = "/tmp/icloudpd/remote_command.txt"
@@ -77,6 +79,25 @@ def icloudpd_download_running():
     return os.system("ps | grep '/opt/icloudpd/bin/icloudpd' | grep -qv -- '--only-print-filenames'") == 0
 
 
+def send_reply(config, receive_id, text):
+    if not receive_id:
+        return
+    try:
+        api_base = config.get("lark_api_base") or "https://open.feishu.cn"
+        token = get_tenant_access_token(config)
+        post_json(
+            f"{api_base}/open-apis/im/v1/messages?receive_id_type=open_id",
+            {
+                "receive_id": receive_id,
+                "msg_type": "text",
+                "content": json.dumps({"text": text}, ensure_ascii=False),
+            },
+            {"Authorization": f"Bearer {token}"},
+        )
+    except Exception as exc:
+        print(f"failed to send Lark control reply: {exc}", flush=True)
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "lark-control/1.0"
 
@@ -143,10 +164,12 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if not is_control_command(config, text):
+            send_reply(config, sender_open_id, f"Unknown iCloudPD command: {text}")
             self.send_json(200, {"ok": True, "ignored": True, "reason": "not a control command"})
             return
 
         if text.strip().lower() == command_prefix(config) and icloudpd_download_running():
+            send_reply(config, sender_open_id, "iCloudPD is already syncing. No new sync was queued.")
             self.send_json(200, {"ok": True, "ignored": True, "reason": "download already running"})
             return
 
@@ -155,6 +178,7 @@ class Handler(BaseHTTPRequestHandler):
         with open(command_file, "a", encoding="utf-8") as handle:
             handle.write(text.replace("\r", " ").replace("\n", " ").strip() + "\n")
         interrupt_current_check()
+        send_reply(config, sender_open_id, f"iCloudPD command accepted: {text}")
 
         self.send_json(200, {"ok": True})
 
