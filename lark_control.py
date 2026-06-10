@@ -71,6 +71,12 @@ def is_control_command(config, text):
     )
 
 
+def should_interrupt_icloudpd(config, text):
+    text_lc = text.strip().lower()
+    prefix = command_prefix(config)
+    return text_lc == prefix or text_lc == f"{prefix} auth"
+
+
 def interrupt_current_check():
     os.system("ps | awk '/\\/opt\\/icloudpd\\/bin\\/icloudpd/ && !/awk/ {print $1}' | while read pid; do kill \"$pid\" 2>/dev/null; done")
 
@@ -177,7 +183,8 @@ class Handler(BaseHTTPRequestHandler):
         os.makedirs(os.path.dirname(command_file), exist_ok=True)
         with open(command_file, "a", encoding="utf-8") as handle:
             handle.write(text.replace("\r", " ").replace("\n", " ").strip() + "\n")
-        interrupt_current_check()
+        if should_interrupt_icloudpd(config, text):
+            interrupt_current_check()
         send_reply(config, sender_open_id, f"iCloudPD command accepted: {text}")
 
         self.send_json(200, {"ok": True})
