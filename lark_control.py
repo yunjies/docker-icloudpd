@@ -78,7 +78,7 @@ def should_interrupt_icloudpd(config, text):
 
 
 def interrupt_current_check():
-    os.system("ps | awk '/\\/opt\\/icloudpd\\/bin\\/icloudpd/ && !/awk/ {print $1}' | while read pid; do kill \"$pid\" 2>/dev/null; done")
+    os.system("ps | awk '/\\/opt\\/icloudpd\\/bin\\/icloudpd/ && !/--auth-only/ && !/awk/ {print $1}' | while read pid; do kill \"$pid\" 2>/dev/null; done")
 
 
 def icloudpd_download_running():

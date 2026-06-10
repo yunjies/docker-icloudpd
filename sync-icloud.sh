@@ -2301,6 +2301,8 @@ process_remote_command()
          send_notification "remotesync" "iCloudPD remote download initiated" "0" "iCloudPD将以Apple ID: ${apple_id}发起身份验证"
       fi
       rm -f "/config/${cookie_file}" "/config/${cookie_file}.session"
+      stop_active_sync_jobs
+      sleep 1
       log_debug "Starting remote authentication process"
       /usr/bin/expect /opt/authenticate.exp &
       poll_sleep=3
@@ -2342,6 +2344,14 @@ poll_lark_remote_commands()
       process_remote_command "${remote_command}"
    done < "${remote_command_snapshot}"
    rm -f "${remote_command_snapshot}"
+}
+
+stop_active_sync_jobs()
+{
+   ps | awk '/\/opt\/icloudpd\/bin\/icloudpd/ && !/--auth-only/ && !/awk/ {print $1}' | while read -r pid
+   do
+      kill "${pid}" 2>/dev/null
+   done
 }
 
 synchronise_user()
